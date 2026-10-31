@@ -26,6 +26,9 @@ jobs:
         
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v4
+
+      - name: Create redirect
+        run: echo '<meta http-equiv="refresh" content="0; url=ferrite/index.html">' > target/doc/index.html
         
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
