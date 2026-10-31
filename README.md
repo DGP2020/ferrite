@@ -10,6 +10,8 @@ The LLM proposes. A deterministic engine (compiler, sanitizers, fuzzers, the
 project's own tests) disposes. Every claim on screen ("verified", "diverged",
 "latent C bug") comes from execution, not from a model's opinion.
 
+[![Rust CI](https://github.com/DGP2020/ferrite/actions/workflows/ci.yml/badge.svg)](https://github.com/DGP2020/ferrite/actions/workflows/ci.yml)
+[![Release](https://github.com/DGP2020/ferrite/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/DGP2020/ferrite/actions/workflows/release.yml)
 ## Non-goal & Attribution Rule
 
 Fuzzing gives **strong evidence of equivalence, not a formal proof**. We say
