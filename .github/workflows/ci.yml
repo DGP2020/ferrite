@@ -1,0 +1,29 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test-and-lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install stable Rust & components
+      run: |
+        rustup update stable
+        rustup component add clippy rustfmt
+      
+    - name: Check code formatting
+      run: cargo fmt --all -- --check
+      
+    - name: Run Clippy (Catches bad Rust practices)
+      run: cargo clippy -- -D warnings
+      
+    - name: Run your TDD tests
+      run: cargo test

@@ -33,5 +33,5 @@ Thumbs.db
 *.db
 *.sqlite
 
-# GitHub
-.github/workflows/
+# Plan
+ferrite-v2-plan.md
