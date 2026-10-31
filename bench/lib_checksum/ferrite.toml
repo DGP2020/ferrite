@@ -1,0 +1,8 @@
+version = 1
+
+[library]
+name = "lib_checksum"
+include_dirs = ["."]
+source_files = ["checksum.c"]
+build_cmd = "cc -O2 -c checksum.c"
+test_cmd = "cc -O2 test_checksum.c checksum.c -o test_checksum && ./test_checksum"

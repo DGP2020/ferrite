@@ -1,0 +1,11 @@
+version = 1
+
+[library]
+name = "clamp_utility"
+include_dirs = ["."]
+source_files = ["clamp.c"]
+
+[clusters]
+
+defines = []
+skip = []

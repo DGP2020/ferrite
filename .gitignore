@@ -1,0 +1,37 @@
+# Build artifacts
+target/
+**/target/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Generated harnesses / corpus (large binary blobs)
+ferrite-out/
+harnesses/
+corpus/
+crash-*
+timeout-*
+
+# LLM cache / secrets
+.llm-cache/
+*.prompt
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment / secrets (never commit)
+.env
+.env.*
+!.env.example
+
+# Volumes / databases
+*.db
+*.sqlite
+
+# GitHub
+.github/workflows/

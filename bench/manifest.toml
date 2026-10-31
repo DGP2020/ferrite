@@ -1,0 +1,242 @@
+# Ferrite-Bench Lite Manifest (ADR 0011)
+# All translations in replay mode are human-written reference translations.
+
+version = 1
+
+[[entries]]
+name = "clamp_i32"
+library = "tier1_scalars"
+source = "bench/tier1/scalars.c"
+tier = 1
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "abs_diff_i32"
+library = "tier1_scalars"
+source = "bench/tier1/scalars.c"
+tier = 1
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "max3_i32"
+library = "tier1_scalars"
+source = "bench/tier1/scalars.c"
+tier = 1
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "min3_i32"
+library = "tier1_scalars"
+source = "bench/tier1/scalars.c"
+tier = 1
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "saturating_add_u32"
+library = "tier1_scalars"
+source = "bench/tier1/scalars.c"
+tier = 1
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "popcount_u32"
+library = "tier1_scalars"
+source = "bench/tier1/scalars.c"
+tier = 1
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "gcd_u32"
+library = "tier1_scalars"
+source = "bench/tier1/scalars.c"
+tier = 1
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "is_leap_year"
+library = "tier1_scalars"
+source = "bench/tier1/scalars.c"
+tier = 1
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "signum_i32"
+library = "tier1_scalars"
+source = "bench/tier1/scalars.c"
+tier = 1
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "cstr_len_bounded"
+library = "tier1_strings"
+source = "bench/tier1/strings.c"
+tier = 1
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "count_char_ascii"
+library = "tier1_strings"
+source = "bench/tier1/strings.c"
+tier = 1
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "is_ascii_digits"
+library = "tier1_strings"
+source = "bench/tier1/strings.c"
+tier = 1
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "sum_bytes"
+library = "tier2_buffers"
+source = "bench/tier2/buffers.c"
+tier = 2
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "xor_checksum"
+library = "tier2_buffers"
+source = "bench/tier2/buffers.c"
+tier = 2
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "find_first_zero"
+library = "tier2_buffers"
+source = "bench/tier2/buffers.c"
+tier = 2
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "count_nonzero"
+library = "tier2_buffers"
+source = "bench/tier2/buffers.c"
+tier = 2
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "fnv1a_hash32"
+library = "tier2_buffers"
+source = "bench/tier2/buffers.c"
+tier = 2
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "djb2_hash"
+library = "tier2_buffers"
+source = "bench/tier2/buffers.c"
+tier = 2
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "reverse_bytes_in_place"
+library = "tier2_buffers"
+source = "bench/tier2/buffers.c"
+tier = 2
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "parse_u16_dec"
+library = "tier2_parsers"
+source = "bench/tier2/parsers.c"
+tier = 2
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "hex_nibble"
+library = "tier2_parsers"
+source = "bench/tier2/parsers.c"
+tier = 2
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "count_kv_lines"
+library = "tier2_parsers"
+source = "bench/tier2/parsers.c"
+tier = 2
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "ringbuf_next_idx"
+library = "tier3_stateful"
+source = "bench/tier3/stateful.c"
+tier = 3
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "ringbuf_used"
+library = "tier3_stateful"
+source = "bench/tier3/stateful.c"
+tier = 3
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "stack_can_push"
+library = "tier3_stateful"
+source = "bench/tier3/stateful.c"
+tier = 3
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "ema_step_u32"
+library = "tier3_stateful"
+source = "bench/tier3/stateful.c"
+tier = 3
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "token_bucket_step"
+library = "tier3_stateful"
+source = "bench/tier3/stateful.c"
+tier = 3
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "bug_off_by_one_read"
+library = "planted_bugs"
+source = "bench/planted_bugs/bugs.c"
+tier = 2
+expected_verdict = "CLatentBug"
+
+[[entries]]
+name = "bug_signed_overflow_abs"
+library = "planted_bugs"
+source = "bench/planted_bugs/bugs.c"
+tier = 1
+expected_verdict = "CLatentBug"
+
+[[entries]]
+name = "bug_oob_write_reset"
+library = "planted_bugs"
+source = "bench/planted_bugs/bugs.c"
+tier = 2
+expected_verdict = "CLatentBug"
+
+[[entries]]
+name = "bug_empty_slice_head"
+library = "planted_bugs"
+source = "bench/planted_bugs/bugs.c"
+tier = 2
+expected_verdict = "CLatentBug"
+
+[[entries]]
+name = "adler32_step"
+library = "lib_checksum"
+source = "bench/lib_checksum/checksum.c"
+tier = 2
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "crc32_byte"
+library = "lib_checksum"
+source = "bench/lib_checksum/checksum.c"
+tier = 1
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "crc32_buf"
+library = "lib_checksum"
+source = "bench/lib_checksum/checksum.c"
+tier = 2
+expected_verdict = "Equivalent"
