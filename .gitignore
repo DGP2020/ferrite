@@ -19,6 +19,7 @@ timeout-*
 # LLM cache / secrets
 .llm-cache/
 *.prompt
+CONTEXT.md
 
 # OS
 .DS_Store

@@ -2,6 +2,7 @@
 name = "ferrite"
 version = "0.1.0"
 edition = "2021"
+repository = "https://github.com/DGP2020/ferrite"
 
 [features]
 default = []
@@ -19,3 +20,8 @@ thiserror = "1.0"
 syn = { version = "2.0", features = ["full", "parsing", "visit"] }
 quote = "1.0"
 toml = "0.8"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
