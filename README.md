@@ -1,5 +1,5 @@
 # Ferrite
-
+Read at [dgp2020.github.io](https://dgp2020.github.io/ferrite/ferrite/index.html)
 Verified C-to-Rust migration agent.
 
 Ferrite migrates C code to safe Rust one function at a time, and only accepts
@@ -11,7 +11,7 @@ project's own tests) disposes. Every claim on screen ("verified", "diverged",
 "latent C bug") comes from execution, not from a model's opinion.
 
 [![Rust CI](https://github.com/DGP2020/ferrite/actions/workflows/ci.yml/badge.svg)](https://github.com/DGP2020/ferrite/actions/workflows/ci.yml)
-[![Release](https://github.com/DGP2020/ferrite/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/DGP2020/ferrite/actions/workflows/release.yml)
+[![Deploy docs](https://github.com/DGP2020/ferrite/actions/workflows/docs.yml/badge.svg?branch=main)](https://github.com/DGP2020/ferrite/actions/workflows/docs.yml)
 ## Non-goal & Attribution Rule
 
 Fuzzing gives **strong evidence of equivalence, not a formal proof**. We say
