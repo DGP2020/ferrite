@@ -50,6 +50,50 @@ memory_pool = ["pool_create", "pool_alloc", "pool_destroy"]
 
 ---
 
+## 1.5. Benchmark Manifest Schema (`manifest.toml`)
+
+For offline evaluation and multi-tier benchmarking, Ferrite defines a manifest format in `bench/manifest.toml` (ADR 0011).
+
+### Example `bench/manifest.toml`
+
+```toml
+version = 1
+
+[[entries]]
+name = "clamp_i32"
+library = "tier1_scalars"
+source = "bench/tier1/scalars.c"
+tier = 1
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "sum_bytes"
+library = "tier2_buffers"
+source = "bench/tier2/buffers.c"
+tier = 2
+expected_verdict = "Equivalent"
+
+[[entries]]
+name = "bug_off_by_one_read"
+library = "planted_bugs"
+source = "bench/planted_bugs/bugs.c"
+tier = 2
+expected_verdict = "CLatentBug"
+```
+
+### Schema Definition
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `version` | Integer | Schema version (currently `1`). |
+| `entries[].name` | String | Target C function identifier. |
+| `entries[].library` | String | Logical component, library, or difficulty grouping. |
+| `entries[].source` | String | Relative file path containing the C function definition. |
+| `entries[].tier` | Integer | Difficulty tier (`1` = scalars/strings, `2` = buffers/parsers, `3` = stateful/data structures). |
+| `entries[].expected_verdict` | String | Expected outcome (`Equivalent`, `CLatentBug`, or `Diverged`). |
+
+---
+
 ## 2. Command Line Interface (CLI)
 
 Ferrite provides a unified pure-Rust command-line executable (ADR 0001).
@@ -66,14 +110,45 @@ ferrite [OPTIONS]
 | `--config <PATH>` | `-c` | `None` | Path to a custom `ferrite.toml` configuration manifest. |
 | `--work-dir <PATH>` | `-w` | `ferrite-out` | Output workspace for generated harnesses, seed corpora, and dashboards. |
 | `--policy <POLICY>` | `-p` | `static` | Model routing policy (`static` or `cascade`). |
+| `--provider <PROVIDER>` | | `replay` | Translation provider (`replay`, `mock`, or `openai`). |
 | `--help` | `-h` | | Print help and argument information. |
 | `--version` | `-V` | | Print Ferrite version. |
+
+### Subcommands
+
+#### `ferrite bench`
+Executes the Ferrite-Bench Lite manifest against target functions across multiple tiers, validates actual outcomes against expected verdicts, and outputs `bench-results.json` along with an ANSI leaderboard table.
+
+```bash
+ferrite bench [OPTIONS]
+```
+
+| Flag | Default | Description |
+| :--- | :--- | :--- |
+| `--manifest <PATH>` | `bench/manifest.toml` | Path to the benchmark manifest TOML. |
+| `--work-dir <PATH>` | `ferrite-out` | Output workspace for results and harnesses. |
+| `--provider <PROVIDER>` | `replay` | Translation provider (`replay`, `mock`, or `openai`). |
+
+### Environment Variables
+
+Ferrite can be configured via environment variables, enabling automated CI runs and zero-credential local replay testing:
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `FERRITE_PROVIDER` | `replay` | Provider selection override (`replay`, `mock`, or `openai`). |
+| `FERRITE_REPLAY_DIR` | `fixtures/replay` | Path to the directory containing `.rs.md` replay translation fixtures. |
+| `FERRITE_API_BASE` | `http://127.0.0.1:8000/v1` | Base URL for OpenAI-compatible HTTP endpoints (Ollama, vLLM, remote APIs). |
+| `FERRITE_API_KEY` | *(empty)* | Authorization Bearer token for remote HTTP model completions. |
+| `FERRITE_MODEL` | `nvidia/Llama-3.3-Nemotron-Super-49B-v1` | Target model identifier passed in completion payloads. |
 
 ### Quick Start Commands
 
 ```bash
-# Run migration on default fixtures using static model policy
-cargo run -- --source-dir fixtures/clamp
+# Run migration on default fixtures using local offline replay mode
+cargo run -- --source-dir fixtures/clamp --provider replay
+
+# Run the 34-function benchmark suite offline
+cargo run -- bench --manifest bench/manifest.toml --provider replay
 
 # Run migration with a custom manifest and cascade model escalation
 cargo run -- --config ./my_lib/ferrite.toml --work-dir ./out --policy cascade

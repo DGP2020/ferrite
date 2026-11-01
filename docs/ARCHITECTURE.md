@@ -54,10 +54,14 @@ flowchart TD
 - **Clustering**: Groups functions that share private structs or internal state into composite `MigrationUnit` clusters.
 - **Contract Formulation**: Defines strict parameter mappings (e.g., `(int *arr, int len)` $\rightarrow$ `&[i32]` or `&mut [i32]`, scalar out-pointers $\rightarrow$ `Result<T, E>` or tuple returns).
 
-### Stage 3: Translate (`src/translate.rs`)
+### Stage 3: Translate (`src/translate.rs`, `src/provider.rs`)
 - **Dual-Layer Architecture (ADR 0004)**:
   1. **Idiomatic Safe Rust**: The model generates memory-safe, idiomatic Rust with 0 `unsafe` blocks.
   2. **Deterministic FFI Companion**: Ferrite automatically templates an `extern "C"` wrapper (`ferrite_<name>`) that translates C-ABI pointers and lengths into safe Rust types and back.
+- **Provider Abstraction (ADR 0001, ADR 0011)**:
+  - **`ReplayProvider` (Default / Offline)**: Loads human-written reference translations from `fixtures/replay/<fn_name>.rs.md`. Enables deterministic zero-API-cost benchmarking, test automation, and offline video demos.
+  - **`MockProvider`**: Built-in canned responses for unit tests and vertical slice development.
+  - **`OpenAiCompatProvider`**: Connects to remote or local HTTP completions endpoints (e.g. Ollama, vLLM, Nebius Token Factory) with token usage tracking, latency recording, and budget caps.
 - **AST Contract Enforcement (ADR 0010)**:
   - Models return a single fenced ````rust```` code block.
   - The AST is validated using `syn` before any compilation attempt to verify:
@@ -76,11 +80,16 @@ The deterministic core of Ferrite. No translation is accepted without passing di
 - Verified refactoring loop that progressively eliminates raw pointers, unbounded indices, or remaining `unsafe` blocks.
 - **Invariant**: Each lifting step must re-pass L2 differential fuzzing before being committed. Any regression aborts the lift and retains the verified predecessor.
 
-### Stage 6: Integrate (`src/models.rs`, ADR 0005)
+### Stage 6: Integrate (`src/integrate.rs`, ADR 0005)
 - **Source-Level Shim Injection**:
   - In the original C codebase, the target C function body is replaced with an injection shim that forwards arguments to the exported `ferrite_<name>` companion symbol.
+- **Hybrid Library Orchestration (`Integrator`)**:
+  - Compiles the translated Rust code into a static archive (`libferrite_<name>.a`).
+  - Synthesizes `ferrite_shims.c` delegating callers to the Rust implementation.
+  - Links both into a unified hybrid library using the configuration in `ferrite.toml` (ADR 0009).
 - **L4 Test Suite Verification**:
-  - The target project's build and test commands configured in `ferrite.toml` (ADR 0009) are executed against the hybrid binary.
+  - Executes the target project's original test suite (e.g. `test_checksum.c`) against the hybrid binary.
+  - Successfully running existing test vectors promotes functions to **`AssuranceLevel::L4`**.
 
 ### Stage 7: Report (`src/dashboard.rs`)
 - **Terminal Summary**: Concise ANSI-colored terminal overview of assurance tiers, execution counts, coverage percentages, and triage outcomes.
@@ -147,9 +156,12 @@ sequenceDiagram
 | [`src/analyze.rs`](file:///c:/Users/danie/Documents/competition%20code/ferrite/src/analyze.rs) | C lexical/AST analysis, function extraction, feature calculation | ADR 0002, ADR 0007 |
 | [`src/plan.rs`](file:///c:/Users/danie/Documents/competition%20code/ferrite/src/plan.rs) | Bottom-up topological scheduling based on call-graph dependencies | ADR 0007 |
 | [`src/translate.rs`](file:///c:/Users/danie/Documents/competition%20code/ferrite/src/translate.rs) | Dual-layer generation, prompt assembly, and `syn` AST contract validation | ADR 0004, ADR 0010 |
+| [`src/provider.rs`](file:///c:/Users/danie/Documents/competition%20code/ferrite/src/provider.rs) | Model provider abstraction: `ReplayProvider`, `MockProvider`, and `OpenAiCompatProvider` | ADR 0001, ADR 0011 |
 | [`src/verify.rs`](file:///c:/Users/danie/Documents/competition%20code/ferrite/src/verify.rs) | Harness generation, clang/rustc compilation, differential fuzz campaign, triage | ADR 0003, ADR 0006, ADR 0008 |
+| [`src/verify/stateful.rs`](file:///c:/Users/danie/Documents/competition%20code/ferrite/src/verify/stateful.rs) | Stateful API sequence fuzzing on opaque handles (L3 assurance verification) | ADR 0003 |
+| [`src/integrate.rs`](file:///c:/Users/danie/Documents/competition%20code/ferrite/src/integrate.rs) | Hybrid build orchestration, `ferrite_<name>` source-level shims, and L4 test suite execution | ADR 0005, ADR 0009 |
+| [`src/bench.rs`](file:///c:/Users/danie/Documents/competition%20code/ferrite/src/bench.rs) | Ferrite-Bench Lite runner, expectation matching, and ANSI leaderboard generation | ADR 0011 |
 | [`src/policy.rs`](file:///c:/Users/danie/Documents/competition%20code/ferrite/src/policy.rs) | Cost-quality routing: `StaticPolicy`, `CascadePolicy`, and `PredictivePolicy` | ADR 0001 |
-| [`src/provider.rs`](file:///c:/Users/danie/Documents/competition%20code/ferrite/src/provider.rs) | Model provider abstraction: unified completion API, token/cost accounting | ADR 0001 |
 | [`src/dashboard.rs`](file:///c:/Users/danie/Documents/competition%20code/ferrite/src/dashboard.rs) | Terminal rendering and interactive standalone HTML report generation | ADR 0001 |
 
 ---

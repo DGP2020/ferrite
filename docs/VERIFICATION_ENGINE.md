@@ -151,3 +151,90 @@ For each verified latent defect, Ferrite generates:
 1. **Trigger Input**: Raw and minimized binary payload that reproduces the sanitizer violation.
 2. **Crash Backtrace**: Full symbolicated stack trace from AddressSanitizer.
 3. **C vs. Rust Execution Diffs**: Side-by-side demonstration showing the C crash alongside Rust's safe execution (e.g. `None`, `Err(OutOfBounds)`, or clamped computation).
+
+---
+
+## 6. Stateful API Fuzzing for L3 Assurance (`src/verify/stateful.rs`)
+
+Pure scalar and stateless buffer functions are fully verified under L2 differential fuzzing. However, systems libraries (ring buffers, memory pools, parser contexts, opaque connection handles) maintain internal state across function invocations (`init` $\rightarrow$ `op1` $\rightarrow$ `op2` $\rightarrow$ `free`).
+
+Ferrite's `StatefulVerifier` elevates stateful migrations to **Assurance Level L3**:
+
+```mermaid
+flowchart LR
+    GEN["Random Sequence Generator<br/>(PRNG Seed)"] --> OPS["Op Sequence: [Push, Pop, Len, Clear]"]
+    OPS --> C_HANDLE["Opaque C Handle<br/>(c_ringbuf_push, pop, len)"]
+    OPS --> R_HANDLE["Rust Safe Model<br/>(RingBuf::push, pop, len)"]
+    C_HANDLE --> CMP{"State Invariant Comparator<br/>(assert identical state after every op)"}
+    R_HANDLE --> CMP
+    CMP -- "All Ops Match Across Runs" --> L3["Verdict::Equivalent (L3)"]
+    CMP -- "State Desynchronization" --> DIV["Verdict::Diverged (Counterexample Op Trace)"]
+```
+
+### Operation Sequence Invariants
+1. **Sequence Synthesis**: Generates hundreds of randomized operations (`RingBufOp::Push(val)`, `RingBufOp::Pop`, `RingBufOp::Len`, `RingBufOp::IsEmpty`, `RingBufOp::Clear`).
+2. **Dual-Model Execution**: Concurrently drives the C implementation via raw pointers and the Rust implementation via safe abstractions.
+3. **Continuous Step Invariance**: Validates return values, internal buffer counts, and boundary behaviors after every single operation.
+4. **Fault Injection Guard**: Tested via mutation fault injection—if the Rust model drops an element or drifts by 1 index, the verifier immediately halts with `VerdictKind::Diverged`.
+
+---
+
+## 7. Hybrid C+Rust Integration & L4 Verification (`src/integrate.rs`)
+
+The ultimate real-world test for any migrated module is whether the parent project's existing tests continue to pass when compiled against a hybrid binary.
+
+Ferrite's `Integrator` orchestrates the **L4 Verification** workflow (ADR 0005, ADR 0009):
+
+```
++-------------------------------------------------------------+
+| Hybrid Project Build (e.g. bench/lib_checksum)              |
+|                                                             |
+|  +------------------------+      +-----------------------+  |
+|  | Original C Header      |      | Safe Rust Library     |  |
+|  | checksum.h             |      | (Compiled staticlib)  |  |
+|  +-----------+------------+      +-----------+-----------+  |
+|              |                               |              |
+|              v                               v              |
+|  +------------------------+      +-----------------------+  |
+|  | Source-Level Shim      |      | Exported FFI Symbols  |  |
+|  | ferrite_shims.c        +----->+ ferrite_adler32_step  |  |
+|  | (Replaces C functions) |      | ferrite_crc32_buf     |  |
+|  +-----------+------------+      +-----------------------+  |
+|              |                                              |
+|              v                                              |
+|  +-------------------------------------------------------+  |
+|  | Native C Project Test Harness (e.g. test_checksum.c)  |  |
+|  | Executes test_cmd from ferrite.toml                   |  |
+|  | Returns 0 -> PROMOTED TO ASSURANCE LEVEL L4           |  |
+|  +-------------------------------------------------------+  |
++-------------------------------------------------------------+
+```
+
+### L4 Promotion Criteria
+To reach `AssuranceLevel::L4`, a `MigrationUnit` must:
+1. Pass L0 compilation and Clippy checks with 0 unsafe lines.
+2. Pass L2 differential fuzzing across $\ge 10,000$ inputs with 100% coverage plateau.
+3. Successfully link as a static archive (`libferrite_<name>.a`) via source shims into the target C library.
+4. Pass the library's original test suite (e.g., standard RFC 1950 and IEEE 802.3 test vectors) with zero regressions.
+
+---
+
+## 8. Ferrite-Bench Lite & Planted Defect Suite
+
+To evaluate verifier accuracy and demonstrate `CLatentBug` triage without requiring external LLM API tokens, Ferrite provides **Ferrite-Bench Lite** (`bench/manifest.toml`):
+
+### Benchmark Composition (34 Functions)
+- **Tier 1 (Scalars & Strings)**: Math utilities, popcounts, leap year logic, GCD, bounded string lengths, ASCII parsers.
+- **Tier 2 (Buffers & Parsers)**: Buffer checksums, byte reversals, key-value line counters, hexadecimal parsers.
+- **Tier 3 (Stateful Systems)**: Ring-buffer index calculators, ring-buffer capacity monitors, token bucket rate-limiters.
+- **Real Library (`lib_checksum`)**: `adler32_step`, `crc32_byte`, and `crc32_buf` migrated to L4.
+
+### Planted C Latent Bugs
+The benchmark includes 4 deliberate legacy C memory safety defects to verify sanitizer triage fidelity:
+
+| Bug Identifier | C Vulnerability Pattern | Sanitizer Diagnosis | Safe Rust Defense |
+| :--- | :--- | :--- | :--- |
+| `bug_off_by_one_read` | Accesses `buf[len]` when `len == 0` or off-by-one | **CWE-125**: Out-of-bounds Read | Returns `None` or safely checks `len` |
+| `bug_signed_overflow_abs` | Executes `-x` on `INT_MIN` in C | **CWE-190**: Signed Integer Overflow UB | `x.wrapping_abs()` or `checked_abs()` |
+| `bug_oob_write_reset` | Loops `for (size_t i = 0; i <= len; i++) buf[i] = 0;` | **CWE-787**: Out-of-bounds Write | `buf.iter_mut().for_each(...)` bounds safety |
+| `bug_empty_slice_head` | Dereferences `buf[0]` without checking `len > 0` | **CWE-476**: NULL/OOB Dereference | `buf.first().copied().unwrap_or(0)` |

@@ -15,6 +15,7 @@ flowchart TD
     PORTAL --> ARCH["System Architecture<br/>(docs/ARCHITECTURE.md)"]
     PORTAL --> VERIF["Verification Engine &amp; Triage<br/>(docs/VERIFICATION_ENGINE.md)"]
     PORTAL --> SPEC["Manifest &amp; CLI Specification<br/>(docs/SPECIFICATION.md)"]
+    PORTAL --> EVAL["Evaluation &amp; Compliance Report<br/>(docs/EVALUATION_REPORT.md)"]
     PORTAL --> ADR["Architecture Decision Records<br/>(docs/ADR_SUMMARY.md)"]
     PORTAL --> PLAN["Ferrite v2 Roadmap &amp; Benchmark<br/>(../ferrite-v2-plan.md)"]
 ```
@@ -23,14 +24,22 @@ flowchart TD
 
 ## Core Documents
 
-### 1. [System Architecture](ARCHITECTURE.md)
+### 1. [Technical Evaluation & Compliance Report](EVALUATION_REPORT.md)
+Comprehensive audit against the 5-point automated verification checklist:
+- **30 Verified C-to-Rust Conversions** across scalars, buffers, parsers, and the real `lib_checksum` library.
+- **Unsafe Behavior Detection**: Planted C defects (`CWE-125`, `CWE-190`, `CWE-787`, `CWE-476`) and AST-level rejection of unapproved `unsafe` blocks.
+- **Differential Fuzzing Results**: 340,408 executions across 34 functions with 100% verdict match.
+- **Before/After Behavioral Comparisons**: Concrete side-by-side walkthroughs of C vs. Rust execution under boundary inputs.
+- **Documented Limitations**: Transparent disclosure of Replay Mode, Phase 1 signature boundaries, and platform sandboxing.
+
+### 2. [System Architecture](ARCHITECTURE.md)
 Detailed walkthrough of the 7-stage migration pipeline:
 - **Analyze**: AST dumping (`clang -Xclang -ast-dump=json`) and feature vector extraction.
 - **Plan**: Bottom-up topological call-graph ordering and function clustering.
-- **Translate**: Dual-layer generation (idiomatic Rust + deterministic FFI companion) with `syn` AST contract validation.
+- **Translate**: Dual-layer generation (idiomatic Rust + deterministic FFI companion), provider abstractions (`ReplayProvider`, `MockProvider`, `OpenAiCompatProvider`), and `syn` AST contract validation.
 - **Verify**: Differential fuzzing, ASan/UBSan instrumentation, and triage.
 - **Lift**: Verified refactoring loop eliminating remaining raw pointers.
-- **Integrate**: Source shim delegation and L4 project test execution.
+- **Integrate**: Source shim delegation (`ferrite_<name>`), static archive linking, and L4 project test execution (`Integrator`).
 - **Report**: Terminal summary and standalone HTML dashboards.
 
 ### 2. [Verification Engine Deep Dive](VERIFICATION_ENGINE.md)
@@ -39,12 +48,17 @@ Comprehensive documentation of the verification engine:
 - **Tri-Binary Differential Triage** (C-only, Rust-only, and unified differential binaries).
 - **Harness Generation**: In-process FFI bridge, seed corpus synthesis, and coverage plateau detection.
 - **Reproduction Check**: Two-phase confirmation loop before and after LLM repair.
-- **Latent C Bug Discovery**: CWE taxonomy (CWE-787, CWE-125, CWE-416, CWE-190) and sanitizer backtrace archiving.
+- **Latent C Bug Discovery**: CWE taxonomy (CWE-787, CWE-125, CWE-416, CWE-190, CWE-476) and sanitizer backtrace archiving.
+- **Stateful API Fuzzing**: L3 opaque handle sequence fuzzing (`StatefulVerifier`).
+- **Hybrid Integration**: L4 test suite execution on migrated C libraries (`lib_checksum`).
+- **Ferrite-Bench Lite**: 34-function benchmark suite with 4 planted memory safety defects.
 
 ### 3. [Configuration & Specification Guide](SPECIFICATION.md)
 Operational specifications for integrating Ferrite into C projects:
 - **`ferrite.toml` Manifest Schema**: Build/test commands, include directories, skip lists, and cluster definitions.
-- **CLI Reference**: Commands, options, and model policy flags (`--policy static|cascade`).
+- **`manifest.toml` Benchmark Schema**: Multi-tier benchmark definitions and expected verdict mapping.
+- **CLI Reference**: Core options (`--provider replay|mock|openai`, `--policy static|cascade`) and the `ferrite bench` subcommand.
+- **Environment Variables**: Headless configuration for CI, offline replays, and remote endpoints.
 - **Signature Scope**: Supported C-to-Rust signatures in Phase 1 vs. Phase 2 roadmap.
 - **Sandboxing & Quotas**: WSL2/Docker runtime constraints and memory limits.
 
