@@ -20,7 +20,6 @@ thiserror = "1.0"
 syn = { version = "2.0", features = ["full", "parsing", "visit"] }
 quote = "1.0"
 toml = "0.8"
-jpegxl-sys = { version = "0.10.4", features = ["vendored"] }
 # The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
