@@ -254,6 +254,18 @@ impl HarnessGen {
         let runner_code = Self::generate_runner_code(&spec, rust_code);
         std::fs::write(&fuzz_target_path, runner_code)?;
 
+        // Generate isolated triage sub-binaries (ADR 0003)
+        let c_isolated_path = unit_dir.join(format!("{}_c_isolated.rs", fn_name));
+        let rust_isolated_path = unit_dir.join(format!("{}_rust_isolated.rs", fn_name));
+        std::fs::write(
+            &c_isolated_path,
+            Self::generate_c_isolated_runner_code(&spec),
+        )?;
+        std::fs::write(
+            &rust_isolated_path,
+            Self::generate_rust_isolated_runner_code(&spec, rust_code),
+        )?;
+
         // 3. Populate seed corpus based on FeatureVector & signature
         let seeds = [
             "0,0,0",
@@ -272,6 +284,8 @@ impl HarnessGen {
         Ok(HarnessArtifacts {
             fuzz_target: fuzz_target_path,
             c_shim: c_shim_path,
+            c_isolated_target: c_isolated_path,
+            rust_isolated_target: rust_isolated_path,
             seed_corpus: seed_corpus_path,
         })
     }
@@ -473,6 +487,320 @@ fn main() {{
             c_call = c_args.join(", "),
             cmp_expr = cmp_expr,
             mut_slice_checks = mut_slice_checks,
+        )
+    }
+
+    pub fn generate_c_isolated_runner_code(spec: &SignatureSpec) -> String {
+        let name = &spec.fn_name;
+        let extern_ret = if spec.rust_ret == "()" {
+            String::new()
+        } else {
+            format!(" -> {}", spec.rust_ret)
+        };
+
+        let mut arg_setup = String::new();
+        let mut c_args = Vec::new();
+        let mut mut_slice_checks = String::new();
+
+        for (idx, p) in spec.params.iter().enumerate() {
+            match p {
+                ParamSpec::Scalar {
+                    name: p_name,
+                    rust_ty,
+                    ..
+                } => {
+                    arg_setup.push_str(&format!(
+                        r#"
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+        let raw_{idx}: i64 = match iter {{
+            0 => 0,
+            1 => 1,
+            2 => -1,
+            3 => 10,
+            4 => 100,
+            5 => -5,
+            6 => 255,
+            7 => i32::MAX as i64,
+            8 => i32::MIN as i64,
+            _ => ((state >> 32) as i32) as i64,
+        }};
+        let {p_name}: {rust_ty} = raw_{idx} as {rust_ty};
+"#,
+                        idx = idx,
+                        p_name = p_name,
+                        rust_ty = rust_ty
+                    ));
+                    c_args.push(p_name.clone());
+                }
+                ParamSpec::SliceU8 {
+                    name: _p_name,
+                    len_name: _,
+                    mutable,
+                } => {
+                    arg_setup.push_str(&format!(
+                        r#"
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+        let slice_len_{idx}: usize = match iter {{
+            0 => 0,
+            1 => 1,
+            2 => 4,
+            3 => 16,
+            _ => ((state >> 48) as usize) % 64,
+        }};
+        let buf_rust_{idx}: Vec<u8> = (0..slice_len_{idx})
+            .map(|_| {{
+                state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+                (state >> 56) as u8
+            }})
+            .collect();
+        let mut buf_c_backing_{idx}: Vec<u8> = buf_rust_{idx}.clone();
+        buf_c_backing_{idx}.push(0xAA);
+        buf_c_backing_{idx}.push(0x55);
+        let buf_c_{idx}: Vec<u8> = buf_rust_{idx}.clone();
+"#,
+                        idx = idx
+                    ));
+                    if *mutable {
+                        c_args.push(format!("buf_c_backing_{idx}.as_mut_ptr()", idx = idx));
+                        c_args.push(format!("buf_c_{}.len()", idx));
+                        mut_slice_checks.push_str(&format!(
+                            r#"
+        if buf_c_backing_{idx}[slice_len_{idx}] != 0xAA || buf_c_backing_{idx}[slice_len_{idx} + 1] != 0x55 {{
+            eprintln!("ASAN_CANARY_OVERWRITE: iter={{}}, out-of-bounds write past len={{}}", iter, slice_len_{idx});
+            std::process::exit(99);
+        }}
+"#,
+                            idx = idx
+                        ));
+                    } else {
+                        c_args.push(format!("buf_c_backing_{idx}.as_ptr()", idx = idx));
+                        c_args.push(format!("buf_c_{}.len()", idx));
+                    }
+                }
+                ParamSpec::CString { name: p_name } => {
+                    arg_setup.push_str(&format!(
+                        r#"
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+        let str_len_{idx}: usize = match iter {{
+            0 => 0,
+            1 => 1,
+            2 => 5,
+            3 => 12,
+            _ => ((state >> 48) as usize) % 32,
+        }};
+        let mut s_bytes_{idx}: Vec<u8> = (0..str_len_{idx})
+            .map(|_| {{
+                state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+                (state >> 56) as u8 % 95 + 32
+            }})
+            .collect();
+        let {p_name}_str = String::from_utf8_lossy(&s_bytes_{idx}).into_owned();
+        let mut {p_name}_cbytes = {p_name}_str.as_bytes().to_vec();
+        {p_name}_cbytes.push(0);
+"#,
+                        idx = idx,
+                        p_name = p_name
+                    ));
+                    c_args.push(format!(
+                        "{}_cbytes.as_ptr() as *const std::os::raw::c_char",
+                        p_name
+                    ));
+                }
+            }
+        }
+
+        let scalar_ordering_fix = if spec.params.len() == 3
+            && spec
+                .params
+                .iter()
+                .all(|p| matches!(p, ParamSpec::Scalar { .. }))
+        {
+            if let (ParamSpec::Scalar { name: n1, .. }, ParamSpec::Scalar { name: n2, .. }) =
+                (&spec.params[1], &spec.params[2])
+            {
+                format!(
+                    "let ({n1}, {n2}) = if {n1} <= {n2} {{ ({n1}, {n2}) }} else {{ ({n2}, {n1}) }};",
+                    n1 = n1,
+                    n2 = n2
+                )
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
+        format!(
+            r#"/* Auto-generated isolated C runner for {name} */
+#![allow(unused_mut, unused_variables, clippy::all)]
+
+extern "C" {{
+    fn c_{name}({extern_params}){extern_ret};
+}}
+
+fn main() {{
+    let mut state: u64 = 0x853c49e6748fea9b;
+    let mut count = 0u64;
+
+    for iter in 0..10_012 {{
+        {arg_setup}
+        {scalar_ordering_fix}
+        let _r_c = unsafe {{ c_{name}({c_call}) }};
+        count += 1;
+        {mut_slice_checks}
+    }}
+
+    println!("SUCCESS: executions={{}}", count);
+}}
+"#,
+            name = name,
+            extern_params = spec.rust_extern_params(),
+            extern_ret = extern_ret,
+            arg_setup = arg_setup,
+            scalar_ordering_fix = scalar_ordering_fix,
+            c_call = c_args.join(", "),
+            mut_slice_checks = mut_slice_checks,
+        )
+    }
+
+    pub fn generate_rust_isolated_runner_code(spec: &SignatureSpec, rust_code: &str) -> String {
+        let name = &spec.fn_name;
+
+        let mut arg_setup = String::new();
+        let mut rust_args = Vec::new();
+
+        for (idx, p) in spec.params.iter().enumerate() {
+            match p {
+                ParamSpec::Scalar {
+                    name: p_name,
+                    rust_ty,
+                    ..
+                } => {
+                    arg_setup.push_str(&format!(
+                        r#"
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+        let raw_{idx}: i64 = match iter {{
+            0 => 0,
+            1 => 1,
+            2 => -1,
+            3 => 10,
+            4 => 100,
+            5 => -5,
+            6 => 255,
+            7 => i32::MAX as i64,
+            8 => i32::MIN as i64,
+            _ => ((state >> 32) as i32) as i64,
+        }};
+        let {p_name}: {rust_ty} = raw_{idx} as {rust_ty};
+"#,
+                        idx = idx,
+                        p_name = p_name,
+                        rust_ty = rust_ty
+                    ));
+                    rust_args.push(p_name.clone());
+                }
+                ParamSpec::SliceU8 {
+                    name: _p_name,
+                    len_name: _,
+                    mutable,
+                } => {
+                    arg_setup.push_str(&format!(
+                        r#"
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+        let slice_len_{idx}: usize = match iter {{
+            0 => 0,
+            1 => 1,
+            2 => 4,
+            3 => 16,
+            _ => ((state >> 48) as usize) % 64,
+        }};
+        let mut buf_rust_{idx}: Vec<u8> = (0..slice_len_{idx})
+            .map(|_| {{
+                state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+                (state >> 56) as u8
+            }})
+            .collect();
+"#,
+                        idx = idx
+                    ));
+                    if *mutable {
+                        rust_args.push(format!("&mut buf_rust_{}", idx));
+                    } else {
+                        rust_args.push(format!("&buf_rust_{}", idx));
+                    }
+                }
+                ParamSpec::CString { name: p_name } => {
+                    arg_setup.push_str(&format!(
+                        r#"
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+        let str_len_{idx}: usize = match iter {{
+            0 => 0,
+            1 => 1,
+            2 => 5,
+            3 => 12,
+            _ => ((state >> 48) as usize) % 32,
+        }};
+        let mut s_bytes_{idx}: Vec<u8> = (0..str_len_{idx})
+            .map(|_| {{
+                state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+                (state >> 56) as u8 % 95 + 32
+            }})
+            .collect();
+        let {p_name}_str = String::from_utf8_lossy(&s_bytes_{idx}).into_owned();
+"#,
+                        idx = idx,
+                        p_name = p_name
+                    ));
+                    rust_args.push(format!("&{}_str", p_name));
+                }
+            }
+        }
+
+        let scalar_ordering_fix = if spec.params.len() == 3
+            && spec
+                .params
+                .iter()
+                .all(|p| matches!(p, ParamSpec::Scalar { .. }))
+        {
+            if let (ParamSpec::Scalar { name: n1, .. }, ParamSpec::Scalar { name: n2, .. }) =
+                (&spec.params[1], &spec.params[2])
+            {
+                format!(
+                    "let ({n1}, {n2}) = if {n1} <= {n2} {{ ({n1}, {n2}) }} else {{ ({n2}, {n1}) }};",
+                    n1 = n1,
+                    n2 = n2
+                )
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
+        format!(
+            r#"/* Auto-generated isolated Rust runner for {name} */
+#![allow(unused_mut, unused_variables, clippy::all)]
+{rust_code}
+
+fn main() {{
+    let mut state: u64 = 0x853c49e6748fea9b;
+    let mut count = 0u64;
+
+    for iter in 0..10_012 {{
+        {arg_setup}
+        {scalar_ordering_fix}
+        let _r_rust = {name}({rust_call});
+        count += 1;
+    }}
+
+    println!("SUCCESS: executions={{}}", count);
+}}
+"#,
+            name = name,
+            rust_code = rust_code,
+            arg_setup = arg_setup,
+            scalar_ordering_fix = scalar_ordering_fix,
+            rust_call = rust_args.join(", "),
         )
     }
 }
