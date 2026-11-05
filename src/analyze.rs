@@ -400,4 +400,3 @@ fn is_c_keyword(token: &str) -> bool {
             | "else"
     )
 }
-

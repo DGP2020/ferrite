@@ -142,10 +142,7 @@ impl Verifier {
         if is_clang {
             cc_cmd.arg("-fsanitize=address,undefined");
         }
-        cc_cmd
-            .arg(&harness.c_shim)
-            .arg("-o")
-            .arg(&c_obj);
+        cc_cmd.arg(&harness.c_shim).arg("-o").arg(&c_obj);
 
         let mut cc_res = cc_cmd.output();
         let mut sanitized = is_clang && cc_res.as_ref().is_ok_and(|o| o.status.success());
@@ -417,7 +414,10 @@ impl Verifier {
                     miri_ok: Some(true),
                     counterexample: Some(stderr.as_bytes().to_vec()),
                     asan_report: Some(defect_summary.clone()),
-                    notes: format!("C latent bug surfaced during verification: {}", defect_summary),
+                    notes: format!(
+                        "C latent bug surfaced during verification: {}",
+                        defect_summary
+                    ),
                 })
             } else {
                 Ok(Verdict {
