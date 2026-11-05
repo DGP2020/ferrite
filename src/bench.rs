@@ -117,6 +117,42 @@ impl BenchSummary {
                 status_str
             ));
         }
+
+        let bugs: Vec<&BenchItemResult> = self
+            .results
+            .iter()
+            .filter(|r| r.actual_verdict == VerdictKind::CLatentBug)
+            .collect();
+        if !bugs.is_empty() {
+            out.push_str(
+                "--------------------------------------------------------------------------------\n",
+            );
+            out.push_str(
+                "            ADDRESSSANITIZER / UBSAN LATENT C DEFECT FINDINGS                   \n",
+            );
+            out.push_str(
+                "--------------------------------------------------------------------------------\n",
+            );
+            out.push_str(&format!(
+                " {:<26} | {:<4} | {:<42}\n",
+                "Function", "Tier", "Sanitizer Defect Type"
+            ));
+            out.push_str(
+                "--------------------------------------------------------------------------------\n",
+            );
+            for b in bugs {
+                let note_snippet = if b.notes.len() > 42 {
+                    format!("{}...", &b.notes[..39])
+                } else {
+                    b.notes.clone()
+                };
+                out.push_str(&format!(
+                    " {:<26} | T{:<3} | {:<42}\n",
+                    b.name, b.tier, note_snippet
+                ));
+            }
+        }
+
         out.push_str(
             "================================================================================\n",
         );

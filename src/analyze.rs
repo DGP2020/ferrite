@@ -24,6 +24,16 @@ impl Analyzer {
                 }
             }
         }
+
+        // Cross-file call-graph resolution across directory
+        let defined_names: std::collections::HashSet<String> =
+            units.iter().map(|u| u.name.clone()).collect();
+        for unit in &mut units {
+            let callees = extract_callees(&unit.source_body, &unit.name, &defined_names);
+            unit.features.callee_count = callees.len() as u32;
+            unit.callees = callees;
+        }
+
         Ok(units)
     }
 
@@ -104,6 +114,15 @@ impl Analyzer {
                     });
                 }
             }
+        }
+
+        // Intra-file call-graph extraction
+        let defined_names: std::collections::HashSet<String> =
+            units.iter().map(|u| u.name.clone()).collect();
+        for unit in &mut units {
+            let callees = extract_callees(&unit.source_body, &unit.name, &defined_names);
+            unit.features.callee_count = callees.len() as u32;
+            unit.callees = callees;
         }
 
         Ok(units)
@@ -267,3 +286,118 @@ pub fn parse_c_signature(sig: &str) -> Option<(String, String)> {
     );
     Some((fn_name.to_string(), rust_contract))
 }
+
+/// Extracts callee function names called inside a C function body.
+pub fn extract_callees(
+    body: &str,
+    current_fn: &str,
+    defined_names: &std::collections::HashSet<String>,
+) -> Vec<String> {
+    let mut callees = Vec::new();
+    let chars: Vec<char> = body.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+
+    while i < len {
+        // Skip string literals
+        if chars[i] == '"' {
+            i += 1;
+            while i < len && chars[i] != '"' {
+                if chars[i] == '\\' && i + 1 < len {
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            if i < len {
+                i += 1;
+            }
+            continue;
+        }
+
+        // Skip character literals
+        if chars[i] == '\'' {
+            i += 1;
+            while i < len && chars[i] != '\'' {
+                if chars[i] == '\\' && i + 1 < len {
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            if i < len {
+                i += 1;
+            }
+            continue;
+        }
+
+        // Skip comments
+        if chars[i] == '/' && i + 1 < len {
+            if chars[i + 1] == '/' {
+                i += 2;
+                while i < len && chars[i] != '\n' {
+                    i += 1;
+                }
+                continue;
+            } else if chars[i + 1] == '*' {
+                i += 2;
+                while i + 1 < len && !(chars[i] == '*' && chars[i + 1] == '/') {
+                    i += 1;
+                }
+                if i + 1 < len {
+                    i += 2;
+                }
+                continue;
+            }
+        }
+
+        // Identify word token
+        if chars[i].is_ascii_alphabetic() || chars[i] == '_' {
+            let start = i;
+            while i < len && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
+                i += 1;
+            }
+            let token: String = chars[start..i].iter().collect();
+
+            // Check if followed by opening parenthesis '('
+            let mut j = i;
+            while j < len && chars[j].is_whitespace() {
+                j += 1;
+            }
+
+            if j < len
+                && chars[j] == '('
+                && !is_c_keyword(&token)
+                && token != current_fn
+                && defined_names.contains(&token)
+                && !callees.contains(&token)
+            {
+                callees.push(token);
+            }
+        } else {
+            i += 1;
+        }
+    }
+
+    callees
+}
+
+fn is_c_keyword(token: &str) -> bool {
+    matches!(
+        token,
+        "if" | "while"
+            | "for"
+            | "switch"
+            | "return"
+            | "sizeof"
+            | "typeof"
+            | "alignof"
+            | "alignas"
+            | "defined"
+            | "case"
+            | "do"
+            | "goto"
+            | "else"
+    )
+}
+

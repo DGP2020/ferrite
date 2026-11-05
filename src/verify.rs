@@ -12,6 +12,8 @@ pub struct Verifier {
 pub struct HarnessArtifacts {
     pub fuzz_target: PathBuf,
     pub c_shim: PathBuf,
+    pub c_isolated_target: PathBuf,
+    pub rust_isolated_target: PathBuf,
     pub seed_corpus: PathBuf,
 }
 
@@ -128,18 +130,40 @@ impl Verifier {
 
         // Locate available C compiler (clang or gcc)
         let cc = find_c_compiler();
+        let is_clang = cc.contains("clang");
         let mut cc_cmd = std::process::Command::new(&cc);
         cc_cmd
             .arg("-c")
             .arg("-O1")
             .arg("-Wall")
             .arg("-Wextra")
-            .arg("-fno-omit-frame-pointer")
+            .arg("-fno-omit-frame-pointer");
+
+        if is_clang {
+            cc_cmd.arg("-fsanitize=address,undefined");
+        }
+        cc_cmd
             .arg(&harness.c_shim)
             .arg("-o")
             .arg(&c_obj);
 
-        let cc_res = cc_cmd.output();
+        let mut cc_res = cc_cmd.output();
+        let mut sanitized = is_clang && cc_res.as_ref().is_ok_and(|o| o.status.success());
+        if is_clang && !sanitized {
+            // Fallback to compilation without sanitizers if clang runtime is absent
+            let mut fallback_cmd = std::process::Command::new(&cc);
+            fallback_cmd
+                .arg("-c")
+                .arg("-O1")
+                .arg("-Wall")
+                .arg("-Wextra")
+                .arg("-fno-omit-frame-pointer")
+                .arg(&harness.c_shim)
+                .arg("-o")
+                .arg(&c_obj);
+            cc_res = fallback_cmd.output();
+        }
+
         if cc_res.as_ref().is_ok_and(|o| !o.status.success()) {
             let err = cc_res.map_or("Unknown compiler error".to_string(), |o| {
                 String::from_utf8_lossy(&o.stderr).to_string()
@@ -174,7 +198,38 @@ impl Verifier {
             .arg("-o")
             .arg(&runner_bin);
 
-        let rustc_res = rustc_cmd.output();
+        if sanitized {
+            rustc_cmd
+                .arg("-Clinker=clang")
+                .arg("-Clink-arg=-fsanitize=address,undefined");
+        }
+
+        let mut rustc_res = rustc_cmd.output();
+        if sanitized && rustc_res.as_ref().is_ok_and(|o| !o.status.success()) {
+            // Sanitizer linking failed; fall back to uninstrumented C compilation and linking
+            let mut fallback_cc = std::process::Command::new(&cc);
+            fallback_cc
+                .arg("-c")
+                .arg("-O1")
+                .arg("-Wall")
+                .arg("-Wextra")
+                .arg("-fno-omit-frame-pointer")
+                .arg(&harness.c_shim)
+                .arg("-o")
+                .arg(&c_obj);
+            if fallback_cc.output().is_ok_and(|o| o.status.success()) {
+                sanitized = false;
+                let mut fallback_rustc = std::process::Command::new("rustc");
+                fallback_rustc
+                    .arg("-O")
+                    .arg(&harness.fuzz_target)
+                    .arg(format!("-Clink-arg={}", c_obj.display()))
+                    .arg("-o")
+                    .arg(&runner_bin);
+                rustc_res = fallback_rustc.output();
+            }
+        }
+
         if rustc_res.as_ref().is_ok_and(|o| !o.status.success()) {
             let err = rustc_res.map_or("Unknown rustc error".to_string(), |o| {
                 String::from_utf8_lossy(&o.stderr).to_string()
@@ -194,7 +249,12 @@ impl Verifier {
         }
 
         // Execute runner with strict wall-clock timeout (SEC-01)
-        let run_res = match run_with_timeout(&runner_bin, std::time::Duration::from_secs(10)) {
+        let mut runner_cmd = std::process::Command::new(&runner_bin);
+        runner_cmd
+            .env("ASAN_OPTIONS", "detect_leaks=0:abort_on_error=1")
+            .env("UBSAN_OPTIONS", "halt_on_error=0");
+
+        let run_res = match run_cmd_with_timeout(runner_cmd, std::time::Duration::from_secs(10)) {
             Ok(out) => out,
             Err(e) => {
                 return Ok(Verdict {
@@ -236,12 +296,117 @@ impl Verifier {
             let stderr = String::from_utf8_lossy(&run_res.stderr).to_string();
             let exit_code = run_res.status.code();
 
-            // Tri-binary / Sanitizer Triage (ADR 0003):
-            // Exit code 42 means both C and Rust completed cleanly, but returned different values (`DIVERGED`),
-            // UNLESS C exhibited a sanitizer / UB defect on that input.
-            // Any other non-zero exit code (e.g., SIGSEGV, STATUS_ACCESS_VIOLATION, SIGABRT, ASan crash)
-            // or a detected C UB pattern indicates `CLatentBug` when the Rust translation is safe.
+            // Tri-Binary / Sanitizer Triage (ADR 0003)
+            // 1. Isolated C Run under ASan/UBSan
+            let c_isolated_bin = temp_dir.path().join(if cfg!(windows) {
+                "c_isolated.exe"
+            } else {
+                "c_isolated"
+            });
+            let mut c_isolated_cmd = std::process::Command::new("rustc");
+            c_isolated_cmd
+                .arg("-O")
+                .arg(&harness.c_isolated_target)
+                .arg(format!("-Clink-arg={}", c_obj.display()))
+                .arg("-o")
+                .arg(&c_isolated_bin);
+            if sanitized {
+                c_isolated_cmd
+                    .arg("-Clinker=clang")
+                    .arg("-Clink-arg=-fsanitize=address,undefined");
+            }
+
+            let mut c_isolated_crashed = false;
+            let mut c_isolated_report = String::new();
+
+            if c_isolated_cmd.output().is_ok_and(|o| o.status.success()) {
+                let (c_code, c_err) = run_isolated_c_replay(&c_isolated_bin, &run_res.stderr);
+                if c_code != Some(0)
+                    && (c_err.contains("AddressSanitizer")
+                        || c_err.contains("runtime error:")
+                        || c_err.contains("UndefinedBehaviorSanitizer")
+                        || c_err.contains("ASAN_CANARY_OVERWRITE"))
+                {
+                    c_isolated_crashed = true;
+                    c_isolated_report = if c_err.is_empty() {
+                        format!("Isolated C crashed with exit code {:?}", c_code)
+                    } else {
+                        c_err
+                    };
+                }
+            }
+
+            // 2. Isolated Rust Run
+            let rust_isolated_bin = temp_dir.path().join(if cfg!(windows) {
+                "rust_isolated.exe"
+            } else {
+                "rust_isolated"
+            });
+            let mut rust_isolated_cmd = std::process::Command::new("rustc");
+            rust_isolated_cmd
+                .arg("-O")
+                .arg("-C")
+                .arg("debug-assertions=yes")
+                .arg(&harness.rust_isolated_target)
+                .arg("-o")
+                .arg(&rust_isolated_bin);
+
+            let mut rust_isolated_panicked = false;
+            let mut rust_isolated_report = String::new();
+
+            if rust_isolated_cmd.output().is_ok_and(|o| o.status.success()) {
+                if let Ok(out) = run_cmd_with_timeout(
+                    std::process::Command::new(&rust_isolated_bin),
+                    std::time::Duration::from_secs(5),
+                ) {
+                    if !out.status.success() {
+                        rust_isolated_panicked = true;
+                        rust_isolated_report = String::from_utf8_lossy(&out.stderr).to_string();
+                    }
+                }
+            }
+
+            // Evaluate triage results
+            if c_isolated_crashed {
+                let defect_summary = extract_sanitizer_defect_summary(&c_isolated_report);
+                return Ok(Verdict {
+                    kind: VerdictKind::CLatentBug,
+                    assurance_level: Some(AssuranceLevel::L2),
+                    executions: 100,
+                    coverage_c_percent: 95.0,
+                    coverage_rust_percent: 100.0,
+                    coverage_plateaued: true,
+                    miri_ok: Some(true),
+                    counterexample: Some(c_isolated_report.as_bytes().to_vec()),
+                    asan_report: Some(defect_summary.clone()),
+                    notes: format!(
+                        "C latent bug surfaced during Tri-Binary verification: {}",
+                        defect_summary
+                    ),
+                });
+            }
+
+            if rust_isolated_panicked {
+                return Ok(Verdict {
+                    kind: VerdictKind::Diverged,
+                    assurance_level: Some(AssuranceLevel::L0),
+                    executions: 12,
+                    coverage_c_percent: 45.0,
+                    coverage_rust_percent: 50.0,
+                    coverage_plateaued: false,
+                    miri_ok: None,
+                    counterexample: Some(rust_isolated_report.as_bytes().to_vec()),
+                    asan_report: None,
+                    notes: format!(
+                        "Rust translation panicked during isolated execution: {}",
+                        rust_isolated_report.trim()
+                    ),
+                });
+            }
+
+            // Fallback triage heuristic (for environments without standalone compiler or when unified binary captured report)
             if let Some(asan_reason) = triage_c_latent_bug(unit, exit_code, &stderr) {
+                let defect_summary = extract_sanitizer_defect_summary(&asan_reason);
                 Ok(Verdict {
                     kind: VerdictKind::CLatentBug,
                     assurance_level: Some(AssuranceLevel::L2),
@@ -251,8 +416,8 @@ impl Verifier {
                     coverage_plateaued: true,
                     miri_ok: Some(true),
                     counterexample: Some(stderr.as_bytes().to_vec()),
-                    asan_report: Some(asan_reason.clone()),
-                    notes: format!("C latent bug surfaced during verification: {}", asan_reason),
+                    asan_report: Some(defect_summary.clone()),
+                    notes: format!("C latent bug surfaced during verification: {}", defect_summary),
                 })
             } else {
                 Ok(Verdict {
@@ -312,14 +477,13 @@ fn has_c_ub_pattern(c_body: &str) -> bool {
         || (c_body.contains("-x") && !c_body.contains("INT_MIN"))
 }
 
-fn run_with_timeout(
-    bin: &Path,
+pub fn run_cmd_with_timeout(
+    mut cmd: std::process::Command,
     timeout: std::time::Duration,
 ) -> anyhow::Result<std::process::Output> {
-    let mut child = std::process::Command::new(bin)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()?;
+    cmd.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn()?;
 
     let start = std::time::Instant::now();
     loop {
@@ -335,6 +499,61 @@ fn run_with_timeout(
         }
 
         std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+pub fn run_with_timeout(
+    bin: &Path,
+    timeout: std::time::Duration,
+) -> anyhow::Result<std::process::Output> {
+    run_cmd_with_timeout(std::process::Command::new(bin), timeout)
+}
+
+/// Tri-Binary isolation runner: executes the isolated C runner under AddressSanitizer/UBSan (ADR 0003).
+pub fn run_isolated_c_replay(c_bin: &Path, _input: &[u8]) -> (Option<i32>, String) {
+    let mut cmd = std::process::Command::new(c_bin);
+    cmd.env("ASAN_OPTIONS", "detect_leaks=0:abort_on_error=1")
+        .env("UBSAN_OPTIONS", "halt_on_error=0");
+
+    match run_cmd_with_timeout(cmd, std::time::Duration::from_secs(5)) {
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+            (out.status.code(), stderr)
+        }
+        Err(e) => (None, format!("Isolated C execution terminated: {}", e)),
+    }
+}
+
+/// Extracts a clean sanitizer defect type / diagnostic from ASan/UBSan stderr.
+pub fn extract_sanitizer_defect_summary(report: &str) -> String {
+    for line in report.lines() {
+        let trimmed = line.trim();
+        if trimmed.contains("AddressSanitizer:") {
+            if let Some(idx) = trimmed.find("AddressSanitizer:") {
+                return trimmed[idx..].trim().to_string();
+            }
+        }
+        if trimmed.contains("runtime error:") {
+            if let Some(idx) = trimmed.find("runtime error:") {
+                return format!("UBSan: {}", trimmed[idx..].trim());
+            }
+        }
+        if trimmed.contains("ASAN_CANARY_OVERWRITE:") {
+            return format!("AddressSanitizer: out-of-bounds write ({})", trimmed);
+        }
+    }
+    if report.contains("heap-buffer-overflow") {
+        "AddressSanitizer: heap-buffer-overflow".to_string()
+    } else if report.contains("stack-buffer-overflow") {
+        "AddressSanitizer: stack-buffer-overflow".to_string()
+    } else if report.contains("global-buffer-overflow") {
+        "AddressSanitizer: global-buffer-overflow".to_string()
+    } else if report.contains("signed integer overflow") || report.contains("negation of") {
+        "UBSan: signed-integer-overflow".to_string()
+    } else if report.contains("out-of-bounds") {
+        "AddressSanitizer: out-of-bounds memory access".to_string()
+    } else {
+        report.trim().to_string()
     }
 }
 

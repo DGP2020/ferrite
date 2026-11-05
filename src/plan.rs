@@ -11,6 +11,7 @@ impl Planner {
     /// Sort units so callees come before callers (bottom-up topological sort).
     pub fn order(units: Vec<FunctionUnit>) -> Vec<FunctionUnit> {
         let mut by_id: HashMap<String, FunctionUnit> = HashMap::new();
+        let mut id_by_name: HashMap<String, String> = HashMap::new();
         let mut ordered_ids = Vec::with_capacity(units.len());
         let mut visited = HashSet::new();
         let mut visiting = HashSet::new();
@@ -18,12 +19,15 @@ impl Planner {
         let mut input_order = Vec::with_capacity(units.len());
         for u in units {
             input_order.push(u.id.clone());
+            id_by_name.insert(u.name.clone(), u.id.clone());
+            id_by_name.insert(u.id.clone(), u.id.clone());
             by_id.insert(u.id.clone(), u);
         }
 
         fn dfs(
             id: &str,
             by_id: &HashMap<String, FunctionUnit>,
+            id_by_name: &HashMap<String, String>,
             visited: &mut HashSet<String>,
             visiting: &mut HashSet<String>,
             ordered: &mut Vec<String>,
@@ -39,8 +43,9 @@ impl Planner {
 
             if let Some(unit) = by_id.get(id) {
                 for callee in &unit.callees {
-                    if by_id.contains_key(callee) {
-                        dfs(callee, by_id, visited, visiting, ordered);
+                    let target_id = id_by_name.get(callee).map(|s| s.as_str()).unwrap_or(callee);
+                    if by_id.contains_key(target_id) {
+                        dfs(target_id, by_id, id_by_name, visited, visiting, ordered);
                     }
                 }
             }
@@ -51,7 +56,14 @@ impl Planner {
         }
 
         for id in &input_order {
-            dfs(id, &by_id, &mut visited, &mut visiting, &mut ordered_ids);
+            dfs(
+                id,
+                &by_id,
+                &id_by_name,
+                &mut visited,
+                &mut visiting,
+                &mut ordered_ids,
+            );
         }
 
         ordered_ids
