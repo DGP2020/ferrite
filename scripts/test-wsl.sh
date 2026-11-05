@@ -26,7 +26,7 @@ echo -e "${BLUE}          FERRITE DETERMINISTIC VERIFICATION & ASAN SUITE       
 echo -e "${BLUE}========================================================================${NC}"
 
 # 1. Environment & Toolchain Diagnostics
-echo -e "\n${YELLOW}[1/4] Checking Linux / WSL Toolchain...${NC}"
+echo -e "\n${YELLOW}[1/5] Checking Linux / WSL Toolchain...${NC}"
 MISSING=0
 for tool in cargo rustc clang; do
     if command -v "$tool" >/dev/null 2>&1; then
@@ -54,18 +54,23 @@ fi
 echo -e "  Rust target: $(rustc -vV | grep 'host:' | cut -d' ' -f2)"
 echo -e "  Clang version: $(clang --version | head -n1)"
 
-# 2. Static Analysis & Clippy Linter Check
-echo -e "\n${YELLOW}[2/4] Running Clippy static analysis...${NC}"
+# 2. Formatting Check
+echo -e "\n${YELLOW}[2/5] Checking code formatting...${NC}"
+cargo fmt --all -- --check
+echo -e "${GREEN}  [✔] Formatting checks clean${NC}"
+
+# 3. Static Analysis & Clippy Linter Check
+echo -e "\n${YELLOW}[3/5] Running Clippy static analysis...${NC}"
 cargo clippy --all-targets -- -D warnings
 echo -e "${GREEN}  [✔] Clippy checks clean (0 warnings)${NC}"
 
-# 3. Unit and Integration Tests (including Tri-Binary ASan triage)
-echo -e "\n${YELLOW}[3/4] Running Unit and Integration Test Suite...${NC}"
+# 4. Unit and Integration Tests (including Tri-Binary ASan triage)
+echo -e "\n${YELLOW}[4/5] Running Unit and Integration Test Suite...${NC}"
 cargo test -- --nocapture
 echo -e "${GREEN}  [✔] All unit & integration tests passed${NC}"
 
-# 4. Offline Benchmark Suite (Ferrite-Bench Lite across 34 functions)
-echo -e "\n${YELLOW}[4/4] Executing Ferrite-Bench Lite Manifest in Replay Mode...${NC}"
+# 5. Offline Benchmark Suite (Ferrite-Bench Lite across 34 functions)
+echo -e "\n${YELLOW}[5/5] Executing Ferrite-Bench Lite Manifest in Replay Mode...${NC}"
 cargo run -- bench --manifest bench/manifest.toml --provider replay
 
 echo -e "\n${GREEN}========================================================================${NC}"
