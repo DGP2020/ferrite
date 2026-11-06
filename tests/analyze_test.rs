@@ -64,13 +64,19 @@ fn analyzer_extracts_call_graph_and_callees() {
     let units = analyzer.analyze_file(&c_file).expect("analyze file");
     assert_eq!(units.len(), 3);
 
-    let unit_a = units.iter().find(|u| u.name == "caller_a").expect("find caller_a");
+    let unit_a = units
+        .iter()
+        .find(|u| u.name == "caller_a")
+        .expect("find caller_a");
     assert_eq!(unit_a.callees.len(), 2);
     assert!(unit_a.callees.contains(&"helper_b".to_string()));
     assert!(unit_a.callees.contains(&"helper_c".to_string()));
     assert_eq!(unit_a.features.callee_count, 2);
 
-    let unit_b = units.iter().find(|u| u.name == "helper_b").expect("find helper_b");
+    let unit_b = units
+        .iter()
+        .find(|u| u.name == "helper_b")
+        .expect("find helper_b");
     assert_eq!(unit_b.callees.len(), 0);
     assert_eq!(unit_b.features.callee_count, 0);
 
