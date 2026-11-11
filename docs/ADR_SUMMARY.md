@@ -1,6 +1,9 @@
 # Architecture Decision Records (ADR) Summary
 
-This document indexes and summarizes the key architectural decisions that define Ferrite's system design, safety guarantees, and engineering trade-offs.
+This document indexes and summarizes the key architectural decisions that define Ferrite's system design, safety guarantees, and engineering trade-offs. Individual full records are maintained in the [`docs/adr/`](adr/README.md) directory following the Nygard format.
+
+- **ADR Index**: [`docs/adr/README.md`](adr/README.md)
+- **ADR Template**: [`docs/adr/template.md`](adr/template.md)
 
 ---
 

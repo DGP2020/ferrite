@@ -16,7 +16,7 @@ flowchart TD
     PORTAL --> VERIF["Verification Engine &amp; Triage<br/>(docs/VERIFICATION_ENGINE.md)"]
     PORTAL --> SPEC["Manifest &amp; CLI Specification<br/>(docs/SPECIFICATION.md)"]
     PORTAL --> EVAL["Evaluation &amp; Compliance Report<br/>(docs/EVALUATION_REPORT.md)"]
-    PORTAL --> ADR["Architecture Decision Records<br/>(docs/ADR_SUMMARY.md)"]
+    PORTAL --> ADR["Architecture Decision Records<br/>(docs/adr/ &amp; ADR_SUMMARY.md)"]
     PORTAL --> PLAN["Ferrite v2 Roadmap &amp; Benchmark<br/>(../ferrite-v2-plan.md)"]
 ```
 
@@ -62,8 +62,8 @@ Operational specifications for integrating Ferrite into C projects:
 - **Signature Scope**: Supported C-to-Rust signatures in Phase 1 vs. Phase 2 roadmap.
 - **Sandboxing & Quotas**: WSL2/Docker runtime constraints and memory limits.
 
-### 4. [Architecture Decision Records (ADR) Summary](ADR_SUMMARY.md)
-Summary of all architectural decision records with rationale, trade-offs, and consequences:
+### 4. [Architecture Decision Records (ADRs)](adr/README.md) & [Summary](ADR_SUMMARY.md)
+Detailed Nygard-format architectural decision records and their cross-cutting summary with rationale, trade-offs, and consequences:
 - **ADR 0001**: Pure Rust Core Orchestrator with Offline Python Analysis
 - **ADR 0002**: Clang JSON AST Dump for C Semantic Analysis
 - **ADR 0003**: Tri-Binary In-Process Differential Fuzzing in Linux Environment
