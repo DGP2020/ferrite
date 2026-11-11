@@ -64,7 +64,8 @@ Comprehensive technical documentation is maintained in the [`docs/`](docs/README
 - [Verification Engine](docs/VERIFICATION_ENGINE.md) — Tri-binary triage, differential fuzzing, and latent bug classification.
 - [Specification Guide](docs/SPECIFICATION.md) — `ferrite.toml` manifest schema, CLI reference, and signature scopes.
 - [Demo & Video Walkthrough Script](docs/DEMO.md) — 3–5 minute end-to-end demonstration script.
-- [Architecture Decision Records (ADRs)](docs/ADR_SUMMARY.md) — Index of ADRs 0001 through 0011 (including [ADR 0011: Replay Provider and Offline-First Architecture](docs/adr/0011-replay-provider-and-offline-first.md)).
+- [Architecture Decision Records (ADRs)](docs/adr/README.md) — Complete Nygard-format ADRs 0001 through 0011 (see also [ADR Summary](docs/ADR_SUMMARY.md)).
+- [Domain Context & AI Agent Guide](CONTEXT.md) — Domain vocabulary, architectural invariants, and operational decision boundaries for AI agents.
 - [Ferrite v2 Roadmap & Plan](ferrite-v2-plan.md) — 75-day project roadmap, Ferrite-Bench specification, and evaluation metrics.
 
 Pipeline stages:
